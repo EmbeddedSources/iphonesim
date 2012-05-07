@@ -46,6 +46,7 @@
     fprintf(stderr, "Commands:\n");
     fprintf(stderr, "  showsdks\n");
     fprintf(stderr, "  launch <application path> [sdkversion] [family] [uuid]\n");
+    fprintf(stderr, "  launch-async <application path> [sdkversion] [family] [uuid]\n");
 }
 
 
@@ -73,11 +74,21 @@
 }
 
 
-- (void) session: (DTiPhoneSimulatorSession *) session didStart: (BOOL) started withError: (NSError *) error {
-    if (started) {
+- (void)session: (DTiPhoneSimulatorSession *) session
+       didStart: (BOOL) started
+      withError: (NSError *) error 
+{
+    if (started) 
+    {
         nsprintf(@"Session started");
-		exit(EXIT_SUCCESS);
-    } else {
+        
+        if ( self->_launchAsynchronously )
+        {
+            exit(EXIT_SUCCESS);
+        }
+    } 
+    else 
+    {
         nsprintf(@"Session could not be started: %@", error);
         exit(EXIT_FAILURE);
     }
@@ -154,10 +165,62 @@
 }
 
 
+
+-(void)runSimulatorWithArgc: (int) argc 
+                       argv: (char **) argv
+{
+    /* Requires an additional argument */
+    if (argc < 3) 
+    {
+        fprintf(stderr, "Missing application path argument\n");
+        [self printUsage];
+        exit(EXIT_FAILURE);
+    }
+    if (argc > 3) {
+        NSString* ver = [NSString stringWithCString:argv[3] encoding:NSUTF8StringEncoding];
+        NSArray *roots = [DTiPhoneSimulatorSystemRoot knownRoots];
+        for (DTiPhoneSimulatorSystemRoot *root in roots) {
+            NSString *v = [root sdkVersion];
+            if ([v isEqualToString:ver])
+            {
+                sdkRoot = root;
+                break;
+            }
+        }
+        if (sdkRoot == nil)
+        {
+            fprintf(stderr,"Unknown or unsupported SDK version: %s\n",argv[3]);
+            [self showSDKs];
+            exit(EXIT_FAILURE);
+        }
+    }
+    else 
+    {
+        sdkRoot = [DTiPhoneSimulatorSystemRoot defaultRoot];
+    }
+    
+    /* Don't exit, adds to runloop */
+    NSString *family = nil;
+    NSString *uuid = nil;
+    if (argc > 4)
+    {
+        family = [NSString stringWithUTF8String:argv[4]];
+    }
+    if (argc > 5)
+    {
+        uuid = [NSString stringWithUTF8String:argv[5]];
+    }
+    [iPhoneSimulator terminateAllApps];
+    [self launchApp: [NSString stringWithUTF8String: argv[2]] withFamily:family uuid:uuid];
+}
+
+
 /**
  * Execute 'main'
  */
-- (void) runWithArgc: (int) argc argv: (char **) argv {
+- (void) runWithArgc: (int) argc 
+                argv: (char **) argv 
+{
     /* Read the command */
     if (argc < 2) {
         [self printUsage];
@@ -167,49 +230,20 @@
     if (strcmp(argv[1], "showsdks") == 0) {
         exit([self showSDKs]);
     }
-    else if (strcmp(argv[1], "launch") == 0) {
-        /* Requires an additional argument */
-        if (argc < 3) {
-            fprintf(stderr, "Missing application path argument\n");
-            [self printUsage];
-            exit(EXIT_FAILURE);
-        }
-        if (argc > 3) {
-            NSString* ver = [NSString stringWithCString:argv[3] encoding:NSUTF8StringEncoding];
-            NSArray *roots = [DTiPhoneSimulatorSystemRoot knownRoots];
-            for (DTiPhoneSimulatorSystemRoot *root in roots) {
-                NSString *v = [root sdkVersion];
-                if ([v isEqualToString:ver])
-                {
-                    sdkRoot = root;
-                    break;
-                }
-            }
-            if (sdkRoot == nil)
-            {
-                fprintf(stderr,"Unknown or unsupported SDK version: %s\n",argv[3]);
-                [self showSDKs];
-                exit(EXIT_FAILURE);
-            }
-        }
-        else {
-            sdkRoot = [DTiPhoneSimulatorSystemRoot defaultRoot];
-        }
-
-        /* Don't exit, adds to runloop */
-		NSString *family = nil;
-		NSString *uuid = nil;
-		if (argc > 4)
-		{
-			family = [NSString stringWithUTF8String:argv[4]];
-		}
-		if (argc > 5)
-		{
-			uuid = [NSString stringWithUTF8String:argv[5]];
-		}
-        [iPhoneSimulator terminateAllApps];
-        [self launchApp: [NSString stringWithUTF8String: argv[2]] withFamily:family uuid:uuid];
-    } else {
+    else if (strcmp(argv[1], "launch") == 0) 
+    {
+        self->_launchAsynchronously = NO;
+        [ self runSimulatorWithArgc: argc
+                               argv: argv ];
+    } 
+    else if (strcmp(argv[1], "launch-async") == 0) 
+    {
+        self->_launchAsynchronously = YES;        
+        [ self runSimulatorWithArgc: argc
+                               argv: argv ];
+    }
+    else 
+    {
         fprintf(stderr, "Unknown command\n");
         [self printUsage];
         exit(EXIT_FAILURE);
